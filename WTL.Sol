@@ -1,0 +1,65 @@
+pragma solidity ^0.5.0;
+
+import "https://github.com/OpenZeppelin/openzeppelin-solidity/contracts/math/SafeMath.sol";
+import "https://github.com/OpenZeppelin/openzeppelin-solidity/contracts/token/ERC20/ERC20.sol";
+
+contract ERC20Lottery is ERC20 {
+    using SafeMath for uint256;
+
+    // The address of the contract creator
+    address public owner;
+
+    // The total amount of stakes in the lottery
+    uint256 public totalStakes;
+
+    // The number of participants in the lottery
+    uint256 public numParticipants;
+
+    // The mapping of participant addresses to their stakes
+    mapping(address => uint256) public stakes;
+
+    // The event to emit when someone wins the lottery
+    event Winner(address winner, uint256 amount);
+
+    constructor() public {
+        owner = msg.sender;
+    }
+
+    // The function to participate in the lottery by staking some ERC20 tokens
+    function participate(uint256 _value) public payable {
+        require(_value > 0, "The stake value must be positive.");
+        require(_value <= balanceOf(msg.sender), "The stake value exceeds the balance of the participant.");
+        require(_value <= allowance(msg.sender, address(this)), "The stake value exceeds the allowance of the participant.");
+        stakes[msg.sender] = stakes[msg.sender].add(_value);
+        totalStakes = totalStakes.add(_value);
+        numParticipants++;
+        transferFrom(msg.sender, address(this), _value);
+    }
+
+    // The function to draw the winner of the lottery and distribute the stakes
+    function draw() public onlyOwner {
+        require(totalStakes > 0, "There are no stakes to draw a winner from.");
+        uint256 winnerStake = random();
+        address winner;
+        uint256 cumulativeStakes = 0;
+        for (address participant : stakes) {
+            cumulativeStakes = cumulativeStakes.add(stakes[participant]);
+            if (winnerStake <= cumulativeStakes) {
+                winner = participant;
+                break;
+            }
+        }
+        uint256 amount = totalStakes.mul(10).div(100); // 10% of the total stakes
+        winner.transfer(amount);
+        owner.transfer(totalStakes.sub(amount));
+        totalStakes = 0;
+        numParticipants = 0;
+        stakes = mapping(address => uint256)();
+        Winner(winner, amount);
+    }
+
+    // The function to get a random number between 0 and the total stakes
+    function random() private view returns (uint256) {
+        return uint256(keccak256(abi.encodePacked(now, totalStakes, address(this)))) % totalStakes;
+    }
+}
